@@ -4,4 +4,4 @@
 
 const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? 'http://localhost:8000'
-    : 'https://your-backend-url.railway.app'; // UPDATE THIS with your Railway/Render backend URL
+    : 'https://web-production-02573.up.railway.app' // UPDATE THIS with your Railway/Render backend URL
