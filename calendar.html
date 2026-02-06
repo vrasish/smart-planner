@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Planner - Calendar</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                <div>
+                    <h1>📅 Calendar View</h1>
+                    <p class="date" id="currentMonth"></p>
+                </div>
+                <div style="text-align: right; color: white;">
+                    <p id="userInfo" style="margin-bottom: 10px;"></p>
+                    <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                        <button id="prevMonth" class="btn" style="background: rgba(255,255,255,0.2); color: white; padding: 8px 20px;">← Prev</button>
+                        <button id="nextMonth" class="btn" style="background: rgba(255,255,255,0.2); color: white; padding: 8px 20px;">Next →</button>
+                        <button id="homeBtn" class="btn" style="background: rgba(255,255,255,0.2); color: white; padding: 8px 20px;">Home</button>
+                        <button id="logoutBtn" class="btn" style="background: rgba(255,255,255,0.2); color: white; padding: 8px 20px;">Logout</button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <div class="plan-section">
+            <div id="calendarContainer">
+                <div class="loading">Loading calendar...</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script>
+        let currentUser = null;
+        let currentDate = new Date();
+        
+        // Check authentication
+        checkAuth();
+        
+        async function checkAuth() {
+            try {
+                const response = await fetch(`${API_BASE}/me`, {
+                    credentials: 'include'
+                });
+                if (response.ok) {
+                    currentUser = await response.json();
+                    document.getElementById('userInfo').textContent = `Logged in as: ${currentUser.username}`;
+                    loadCalendar();
+                } else {
+                    window.location.href = 'login.html';
+                }
+            } catch (error) {
+                window.location.href = 'login.html';
+            }
+        }
+        
+        function loadCalendar() {
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+            
+            document.getElementById('currentMonth').textContent = 
+                currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+            
+            // Calculate start and end dates for the month
+            const startDate = new Date(year, month, 1);
+            const endDate = new Date(year, month + 1, 0);
+            
+            const startStr = startDate.toISOString().split('T')[0];
+            const endStr = endDate.toISOString().split('T')[0];
+            
+            fetch(`${API_BASE}/calendar?start_date=${startStr}&end_date=${endStr}`, {
+                credentials: 'include'
+            })
+            .then(response => response.json())
+            .then(data => {
+                renderCalendar(data, year, month);
+            })
+            .catch(error => {
+                document.getElementById('calendarContainer').innerHTML = 
+                    `<div class="no-plan"><p>Error loading calendar: ${error.message}</p></div>`;
+            });
+        }
+        
+        function renderCalendar(calendarData, year, month) {
+            const firstDay = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const today = new Date();
+            
+            let html = '<div class="calendar-grid">';
+            
+            // Day headers
+            const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            dayNames.forEach(day => {
+                html += `<div class="calendar-day-header">${day}</div>`;
+            });
+            
+            // Empty cells for days before month starts
+            for (let i = 0; i < firstDay; i++) {
+                html += '<div class="calendar-day"></div>';
+            }
+            
+            // Days of the month
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const isToday = today.getFullYear() === year && 
+                               today.getMonth() === month && 
+                               today.getDate() === day;
+                
+                const tasks = calendarData[dateStr] || [];
+                
+                html += `<div class="calendar-day ${isToday ? 'today' : ''}">`;
+                html += `<div class="calendar-day-header">${day}</div>`;
+                
+                if (tasks.length > 0) {
+                    tasks.forEach(task => {
+                        const hours = Math.floor(task.duration_minutes / 60);
+                        const mins = task.duration_minutes % 60;
+                        const timeStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+                        const time = task.scheduled_time || '';
+                        
+                        html += `
+                            <div class="calendar-task" style="background: ${getCategoryColor(task.category)};" 
+                                 title="${task.title} - ${timeStr} ${time ? 'at ' + time : ''}">
+                                <strong>${escapeHtml(task.title)}</strong>
+                                <br><small>${time || timeStr}</small>
+                            </div>
+                        `;
+                    });
+                }
+                
+                html += '</div>';
+            }
+            
+            html += '</div>';
+            document.getElementById('calendarContainer').innerHTML = html;
+        }
+        
+        function getCategoryColor(category) {
+            const colors = {
+                'General': '#667eea',
+                'School': '#4CAF50',
+                'Work': '#2196F3',
+                'Personal': '#FF9800',
+                'Health': '#E91E63',
+                'Shopping': '#9C27B0'
+            };
+            return colors[category] || '#667eea';
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Navigation
+        document.getElementById('prevMonth').addEventListener('click', () => {
+            currentDate.setMonth(currentDate.getMonth() - 1);
+            loadCalendar();
+        });
+        
+        document.getElementById('nextMonth').addEventListener('click', () => {
+            currentDate.setMonth(currentDate.getMonth() + 1);
+            loadCalendar();
+        });
+        
+        document.getElementById('homeBtn').addEventListener('click', () => {
+            window.location.href = 'index.html';
+        });
+        
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            try {
+                await fetch(`${API_BASE}/logout`, {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                window.location.href = 'login.html';
+            } catch (error) {
+                window.location.href = 'login.html';
+            }
+        });
+    </script>
+</body>
+</html>

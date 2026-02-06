@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+*.py
+api.py
+requirements.txt
+setup_*.py
+planner.py
+.env
+*.db
+*.sqlite

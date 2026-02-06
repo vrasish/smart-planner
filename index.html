@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Planner - Today's Plan</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                <div>
+                    <h1>🧠 Smart Planner</h1>
+                    <p class="date" id="currentDate"></p>
+                </div>
+                <div style="text-align: right; color: white;">
+                    <p id="userInfo" style="margin-bottom: 10px;"></p>
+                    <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                        <button id="calendarBtn" class="btn" style="background: rgba(255,255,255,0.2); color: white; padding: 8px 20px; font-size: 0.9rem;">📅 Calendar</button>
+                        <button id="notificationsBtn" class="btn" style="background: rgba(255,255,255,0.2); color: white; padding: 8px 20px; font-size: 0.9rem; position: relative;">
+                            🔔 Notifications
+                            <span id="notificationBadge" style="display: none; position: absolute; top: -5px; right: -5px; background: #ff4444; color: white; border-radius: 50%; width: 20px; height: 20px; font-size: 0.7rem; display: flex; align-items: center; justify-content: center;">0</span>
+                        </button>
+                        <button id="logoutBtn" class="btn" style="background: rgba(255,255,255,0.2); color: white; padding: 8px 20px; font-size: 0.9rem;">Logout</button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Add Task Form -->
+        <div class="form-section">
+            <h2>Add New Task</h2>
+            <form id="taskForm">
+                <div class="form-group">
+                    <label for="title">Task Title</label>
+                    <input type="text" id="title" name="title" required placeholder="e.g., Math homework">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="deadline">Deadline</label>
+                        <input type="date" id="deadline" name="deadline" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="duration">Duration (minutes)</label>
+                        <input type="number" id="duration" name="duration" required min="1" placeholder="60">
+                    </div>
+                    <div class="form-group">
+                        <label for="priority">Priority (1-5)</label>
+                        <input type="number" id="priority" name="priority" required min="1" max="5" placeholder="5">
+                    </div>
+                    <div class="form-group">
+                        <label for="category">Category</label>
+                        <select id="category" name="category" required>
+                            <option value="General">General</option>
+                        </select>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary">Add Task</button>
+            </form>
+        </div>
+
+        <!-- Generate Plan Button -->
+        <div class="action-section">
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <button id="generatePlanBtn" class="btn btn-generate">Generate Smart Plan (Today)</button>
+                <label style="display: flex; align-items: center; gap: 5px;">
+                    <span>Plan for:</span>
+                    <input type="number" id="planDays" value="1" min="1" max="7" style="width: 60px; padding: 8px;">
+                    <span>day(s)</span>
+                </label>
+            </div>
+            <div id="message" class="message"></div>
+        </div>
+
+        <!-- Notifications Panel -->
+        <div id="notificationsPanel" class="notifications-panel" style="display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3>Notifications</h3>
+                <button id="closeNotifications" class="btn" style="padding: 5px 15px; font-size: 0.9rem;">Close</button>
+            </div>
+            <div id="notificationsList"></div>
+        </div>
+
+        <!-- Today's Plan Display -->
+        <div class="plan-section">
+            <h2>Today's Plan</h2>
+            <div id="planContainer">
+                <div class="loading">Loading plan...</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script>
+        let currentUser = null;
+        
+        // Check authentication on page load
+        checkAuth();
+        
+        async function checkAuth() {
+            try {
+                const response = await fetch(`${API_BASE}/me`, {
+                    credentials: 'include'
+                });
+                if (response.ok) {
+                    currentUser = await response.json();
+                    document.getElementById('userInfo').textContent = `Logged in as: ${currentUser.username} (${currentUser.role})`;
+                    initPage();
+                } else {
+                    window.location.href = 'login.html';
+                }
+            } catch (error) {
+                window.location.href = 'login.html';
+            }
+        }
+        
+        function initPage() {
+            // Set current date
+            document.getElementById('currentDate').textContent = new Date().toLocaleDateString('en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            });
+            
+            // Set default deadline to tomorrow
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            document.getElementById('deadline').value = tomorrow.toISOString().split('T')[0];
+            
+            // Load categories and plan
+            loadCategories();
+            loadTodayPlan();
+            loadNotifications();
+            checkNotifications();
+            
+            // Set up notification polling
+            setInterval(checkNotifications, 30000); // Check every 30 seconds
+        }
+        
+        // Load categories
+        async function loadCategories() {
+            try {
+                const response = await fetch(`${API_BASE}/categories`, {
+                    credentials: 'include'
+                });
+                const categories = await response.json();
+                const select = document.getElementById('category');
+                select.innerHTML = '';
+                categories.forEach(cat => {
+                    const option = document.createElement('option');
+                    option.value = cat.name;
+                    option.textContent = cat.name;
+                    select.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Error loading categories:', error);
+            }
+        }
+        
+        // Logout handler
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            try {
+                await fetch(`${API_BASE}/logout`, {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                localStorage.removeItem('user');
+                window.location.href = 'login.html';
+            } catch (error) {
+                localStorage.removeItem('user');
+                window.location.href = 'login.html';
+            }
+        });
+
+        // Handle task form submission
+        document.getElementById('taskForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const taskData = {
+                title: document.getElementById('title').value,
+                deadline: document.getElementById('deadline').value,
+                duration: parseInt(document.getElementById('duration').value),
+                priority: parseInt(document.getElementById('priority').value),
+                category: document.getElementById('category').value
+            };
+
+            try {
+                const response = await fetch(`${API_BASE}/tasks`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify(taskData)
+                });
+
+                if (response.ok) {
+                    showMessage('✅ Task added successfully!', 'success');
+                    document.getElementById('taskForm').reset();
+                    const tomorrow = new Date();
+                    tomorrow.setDate(tomorrow.getDate() + 1);
+                    document.getElementById('deadline').value = tomorrow.toISOString().split('T')[0];
+                    checkNotifications(); // Refresh notifications
+                } else {
+                    showMessage('❌ Failed to add task', 'error');
+                }
+            } catch (error) {
+                showMessage('❌ Error: ' + error.message, 'error');
+            }
+        });
+
+        // Handle generate plan button
+        document.getElementById('generatePlanBtn').addEventListener('click', async () => {
+            try {
+                const days = parseInt(document.getElementById('planDays').value) || 1;
+                showMessage(`🔄 Generating plan for ${days} day(s)...`, 'info');
+                document.getElementById('generatePlanBtn').disabled = true;
+
+                const response = await fetch(`${API_BASE}/generate-plan?days=${days}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include'
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    showMessage(`✅ ${data.message} - ${data.total_tasks_planned} tasks planned`, 'success');
+                    loadTodayPlan();
+                    checkNotifications(); // Refresh notifications
+                } else {
+                    showMessage('❌ Failed to generate plan', 'error');
+                }
+            } catch (error) {
+                showMessage('❌ Error: ' + error.message, 'error');
+            } finally {
+                document.getElementById('generatePlanBtn').disabled = false;
+            }
+        });
+        
+        // Task completion
+        async function completeTask(taskId, taskTitle) {
+            if (!confirm(`Mark "${taskTitle}" as completed?`)) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/tasks/${taskId}/complete`, {
+                    method: 'PATCH',
+                    credentials: 'include'
+                });
+                
+                if (response.ok) {
+                    showMessage('✅ Task marked as completed!', 'success');
+                    loadTodayPlan();
+                    checkNotifications();
+                } else {
+                    showMessage('❌ Failed to complete task', 'error');
+                }
+            } catch (error) {
+                showMessage('❌ Error: ' + error.message, 'error');
+            }
+        }
+        
+        // Notifications
+        async function checkNotifications() {
+            try {
+                const response = await fetch(`${API_BASE}/notifications?unread_only=true`, {
+                    credentials: 'include'
+                });
+                const notifications = await response.json();
+                const badge = document.getElementById('notificationBadge');
+                if (notifications.length > 0) {
+                    badge.textContent = notifications.length;
+                    badge.style.display = 'flex';
+                    
+                    // Request browser notification permission
+                    if (Notification.permission === 'granted' && notifications.length > 0) {
+                        new Notification('Smart Planner', {
+                            body: notifications[0].message,
+                            icon: '🔔'
+                        });
+                    }
+                } else {
+                    badge.style.display = 'none';
+                }
+            } catch (error) {
+                console.error('Error checking notifications:', error);
+            }
+        }
+        
+        async function loadNotifications() {
+            try {
+                const response = await fetch(`${API_BASE}/notifications`, {
+                    credentials: 'include'
+                });
+                const notifications = await response.json();
+                const container = document.getElementById('notificationsList');
+                
+                if (notifications.length === 0) {
+                    container.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">No notifications</p>';
+                    return;
+                }
+                
+                let html = '';
+                notifications.forEach(notif => {
+                    const date = new Date(notif.created_at);
+                    html += `
+                        <div class="notification-item" style="padding: 15px; margin-bottom: 10px; background: ${notif.read_status ? '#f8f9fa' : '#e3f2fd'}; border-radius: 8px; border-left: 4px solid ${notif.type === 'success' ? '#4CAF50' : notif.type === 'error' ? '#f44336' : '#2196F3'};">
+                            <p style="margin: 0 0 5px 0; font-weight: ${notif.read_status ? 'normal' : 'bold'};">${escapeHtml(notif.message)}</p>
+                            <small style="color: #666;">${date.toLocaleString()}</small>
+                            ${!notif.read_status ? `<button onclick="markRead(${notif.id})" style="float: right; padding: 4px 10px; font-size: 0.8rem;">Mark read</button>` : ''}
+                        </div>
+                    `;
+                });
+                container.innerHTML = html;
+            } catch (error) {
+                console.error('Error loading notifications:', error);
+            }
+        }
+        
+        async function markRead(notificationId) {
+            try {
+                await fetch(`${API_BASE}/notifications/${notificationId}/read`, {
+                    method: 'PATCH',
+                    credentials: 'include'
+                });
+                loadNotifications();
+                checkNotifications();
+            } catch (error) {
+                console.error('Error marking notification as read:', error);
+            }
+        }
+        
+        // Request notification permission
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+        
+        // Calendar navigation
+        document.getElementById('calendarBtn').addEventListener('click', () => {
+            window.location.href = 'calendar.html';
+        });
+        
+        // Notifications panel
+        document.getElementById('notificationsBtn').addEventListener('click', () => {
+            const panel = document.getElementById('notificationsPanel');
+            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+            if (panel.style.display === 'block') {
+                loadNotifications();
+            }
+        });
+        
+        document.getElementById('closeNotifications').addEventListener('click', () => {
+            document.getElementById('notificationsPanel').style.display = 'none';
+        });
+
+        // Load today's plan
+        async function loadTodayPlan() {
+            try {
+                const response = await fetch(`${API_BASE}/plan/today`, {
+                    credentials: 'include'
+                });
+                const plan = await response.json();
+
+                const container = document.getElementById('planContainer');
+                
+                if (plan.length === 0) {
+                    container.innerHTML = `
+                        <div class="no-plan">
+                            <p>No plan generated for today.</p>
+                            <p>Click "Generate Smart Plan" to create your plan!</p>
+                        </div>
+                    `;
+                } else {
+                    let html = '<div class="tasks-list">';
+                    let totalMinutes = 0;
+                    plan.forEach((item) => {
+                        totalMinutes += item.duration_minutes;
+                        const hours = Math.floor(item.duration_minutes / 60);
+                        const minutes = item.duration_minutes % 60;
+                        const timeDisplay = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+                        const deadlineDate = new Date(item.deadline);
+                        const deadlineStr = deadlineDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                        const scheduledTime = item.scheduled_time || 'Not scheduled';
+                        
+                        html += `
+                            <div class="task-card" data-task-id="${item.task_id || ''}">
+                                <div class="task-order">${item.task_order}</div>
+                                <div class="task-content" style="flex: 1;">
+                                    <h3>${escapeHtml(item.title)}</h3>
+                                    <div class="task-details">
+                                        <span class="duration">⏱️ ${timeDisplay}</span>
+                                        <span class="scheduled-time" style="color: #667eea; font-weight: 600;">🕐 ${scheduledTime}</span>
+                                        <span class="priority priority-${item.priority}">
+                                            Priority: ${item.priority}
+                                        </span>
+                                        <span class="deadline">📅 Due: ${deadlineStr}</span>
+                                    </div>
+                                </div>
+                                <button class="btn-complete" onclick="completeTask(${item.task_id || 'null'}, '${escapeHtml(item.title).replace(/'/g, "\\'")}')" style="background: #4CAF50; color: white; padding: 8px 15px; border: none; border-radius: 6px; cursor: pointer; margin-left: 10px;">✓ Complete</button>
+                            </div>
+                        `;
+                    });
+                    html += '</div>';
+                    const totalHours = Math.floor(totalMinutes / 60);
+                    const totalMins = totalMinutes % 60;
+                    html += `
+                        <div class="summary">
+                            <p>Total time: ${totalHours}h ${totalMins}m</p>
+                        </div>
+                    `;
+                    container.innerHTML = html;
+                }
+            } catch (error) {
+                document.getElementById('planContainer').innerHTML = `
+                    <div class="no-plan">
+                        <p>❌ Error loading plan: ${error.message}</p>
+                        <p>Make sure the API is running at ${API_BASE}</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Show message
+        function showMessage(text, type) {
+            const messageEl = document.getElementById('message');
+            messageEl.textContent = text;
+            messageEl.className = `message message-${type}`;
+            messageEl.style.display = 'block';
+            
+            setTimeout(() => {
+                messageEl.style.display = 'none';
+            }, 3000);
+        }
+
+        // Escape HTML to prevent XSS
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+    </script>
+</body>
+</html>

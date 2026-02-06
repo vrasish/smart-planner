@@ -1,0 +1,8 @@
+{
+  "name": "smart-planner",
+  "version": "1.0.0",
+  "description": "Smart Planner Frontend",
+  "scripts": {
+    "build": "echo 'No build step needed for static site'"
+  }
+}
