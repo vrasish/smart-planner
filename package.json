@@ -3,6 +3,6 @@
   "version": "1.0.0",
   "description": "Smart Planner Frontend",
   "scripts": {
-    "build": "echo 'No build step needed for static site'"
+    "build": "echo 'Static site - no build needed'"
   }
 }
